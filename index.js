@@ -1,9 +1,10 @@
 // ============================================================
-//  index.js — Crypto Signal Bot для Railway
+//  index.js — Crypto Signal Bot для Render.com / Railway
 //  Сканирует 7 монет на 15M + 1H, шлёт сигналы в Telegram
 // ============================================================
 
 import fetch from 'node-fetch';
+import http from 'http';
 import {
   calcRSI, calcEMA, calcMACD, calcATR, calcADX,
   detectRSIDivergence, detectCandlePattern,
@@ -448,6 +449,28 @@ async function main() {
   console.log(`🔑 TG Token: ${TG_TOKEN ? '✅ установлен' : '❌ не задан'}`);
   console.log(`💬 TG Chat:  ${TG_CHAT  ? '✅ установлен' : '❌ не задан'}`);
 
+  // ── HTTP сервер для Render keepalive ──────────────────────
+  // Render "засыпает" без входящих запросов — этот сервер
+  // принимает пинги от UptimeRobot и не даёт боту уснуть
+  const PORT = process.env.PORT || 3000;
+  const server = http.createServer((req, res) => {
+    const open = Object.keys(openSignals).length;
+    const uptime = Math.floor(process.uptime() / 60);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'alive',
+      uptime_minutes: uptime,
+      open_signals: open,
+      assets: ASSETS.map(a => a.key),
+      btc_trend_4h: btcTrend4h,
+      time: new Date().toISOString()
+    }));
+  });
+  server.listen(PORT, () => {
+    console.log(`🌐 HTTP keepalive сервер запущен на порту ${PORT}`);
+  });
+  // ─────────────────────────────────────────────────────────
+
   if (!TG_TOKEN || !TG_CHAT) {
     await sendTG('🚀 Бот запущен (тестовый режим без TG)');
   } else {
@@ -469,7 +492,7 @@ async function main() {
   setInterval(scan15M, SCAN_15M * 1000);
   setInterval(scan1H,  SCAN_1H  * 1000);
 
-  // Keepalive лог каждые 6 часов
+  // Heartbeat лог каждые 6 часов
   setInterval(() => {
     const open = Object.keys(openSignals).length;
     console.log(`[HEARTBEAT] ${new Date().toISOString()} | Открытых сигналов: ${open}`);
